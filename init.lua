@@ -10,6 +10,7 @@ cc_guide = {}
 cc_guide.contexts = {}
 cc_guide.icons = {
 	["normal"] = "command_craft_guide_normal.png",
+	["shapeless"] = "command_craft_guide_normal.png",
 	["cooking"] = "default_furnace_front.png",
 	["fuel"] = "default_furnace_front.png",
 }
@@ -17,6 +18,11 @@ cc_guide.icons = {
 function cc_guide.do_work(name)
 	local recipes = cc_guide.contexts[name]["data"]
 	local index = cc_guide.contexts[name]["recp"]
+	local width = recipes[index].width
+	if width == 0 then
+		width = 3
+		recipes[index].type = "shapeless"
+	end
 
 	minetest.log("action", "[CC_Guide] Form update for player " .. name .. " at index " .. index)
 
@@ -25,8 +31,10 @@ function cc_guide.do_work(name)
 		"button_exit[2.5,3.5;1.5,1;quit_search;Close]" ..
 		"image[3,1;1,1;" .. cc_guide.icons[recipes[index].type] .. "]"
 
-	for k = 1,9 do
-		cc_guide.contexts[name]["inv"]:set_stack("output", k, ItemStack(recipes[index].items[k]))
+	cc_guide.contexts[name]["inv"]:set_list("output", {[1] = "", [9] = ""})
+	for i, stack in pairs(recipes[index].items) do
+		local newind = i + math.floor(i/(width+1)) * (3 - width)
+		cc_guide.contexts[name]["inv"]:set_stack("output", newind, ItemStack(stack))
 	end
 
 	if table.getn(recipes) > 1 then
