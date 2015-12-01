@@ -34,7 +34,7 @@ function cc_guide.do_work(name)
 
 	cc_guide.contexts[name]["inv"]:set_list("output", {[1] = "", [9] = ""})
 	for i, stack in pairs(recipes[index].items) do
-		local newind = i + math.floor(i/(width+1)) * (3 - width)
+		local newind = i + (math.floor((i-1)/width) * (3 - width))
 		if stack:split(":")[1] ~= "group" then
 			cc_guide.contexts[name]["inv"]:set_stack("output", newind, ItemStack(stack))
 		else
