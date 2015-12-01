@@ -121,8 +121,8 @@ minetest.register_chatcommand("craft_search", {
 
 		local found = 0
 		for itemstring, def in pairs(minetest.registered_items) do
-			if (def.description or ""):lower():find(param:lower()) or
-				itemstring:find(param:lower()) then
+			if def.description and def.description ~= "" and (def.description:lower():find(param:lower()) or
+				itemstring:find(param:lower())) then
 				answer = answer .. itemstring .. " (" ..def.description .. "),"
 				found = found + 1
 			end
