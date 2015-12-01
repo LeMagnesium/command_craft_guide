@@ -156,6 +156,14 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	player:set_inventory_formspec(cc_guide.contexts[name]["formspec"])
 end)
 
+minetest.register_on_leaveplayer(function(player)
+	local player_name = player:get_player_name()
+	if cc_guide.contexts[player_name] then
+		player:set_inventory_formspec(cc_guide.contexts[player_name]["oldformspec"])
+		cc_guide.contexts[player_name] = nil
+	end
+end)
+
 minetest.after(0, function() -- Retrieve all groups
 	for item, def in pairs(minetest.registered_items) do
 		for group in pairs(def.groups) do
