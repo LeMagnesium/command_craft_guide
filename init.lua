@@ -14,6 +14,7 @@ cc_guide.icons = {
 	["cooking"] = "default_furnace_front.png",
 	["fuel"] = "default_furnace_front.png",
 }
+cc_guide.groups = {}
 
 function cc_guide.do_work(name)
 	local recipes = cc_guide.contexts[name]["data"]
@@ -34,7 +35,11 @@ function cc_guide.do_work(name)
 	cc_guide.contexts[name]["inv"]:set_list("output", {[1] = "", [9] = ""})
 	for i, stack in pairs(recipes[index].items) do
 		local newind = i + math.floor(i/(width+1)) * (3 - width)
-		cc_guide.contexts[name]["inv"]:set_stack("output", newind, ItemStack(stack))
+		if stack:split(":")[1] ~= "group" then
+			cc_guide.contexts[name]["inv"]:set_stack("output", newind, ItemStack(stack))
+		else
+			cc_guide.contexts[name]["inv"]:set_stack("output", newind, ItemStack(cc_guide.groups[stack:split(":")[2]]))
+		end
 	end
 
 	if table.getn(recipes) > 1 then
@@ -42,7 +47,7 @@ function cc_guide.do_work(name)
 			answer = answer .. "button[3,2;1,1;cc_next;>>]"
 		end
 		if index > 1 then
-			answer = answer .. "button[3,0;1,1;cc_prev;<<]"			
+			answer = answer .. "button[3,0;1,1;cc_prev;<<]"
 		end
 		answer = answer .. "label[0,3.6;Recipe " .. index .. "/" .. table.getn(recipes) .. "]"
 	end
@@ -149,4 +154,14 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	end
 	cc_guide.do_work(name)
 	player:set_inventory_formspec(cc_guide.contexts[name]["formspec"])
+end)
+
+minetest.after(0, function() -- Retrieve all groups
+	for item, def in pairs(minetest.registered_items) do
+		for group in pairs(def.groups) do
+			if not cc_guide.groups[group] then
+				cc_guide.groups[group] = item
+			end
+		end
+	end
 end)
