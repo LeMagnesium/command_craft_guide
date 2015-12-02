@@ -28,17 +28,25 @@ function cc_guide.do_work(name)
 	minetest.log("action", "[CC_Guide] Form update for player " .. name .. " at index " .. index)
 
 	local answer = "size[4,4]" ..
-		"list[detached:cc_output_" .. name .. ";output;0,0;3,3;]" ..
 		"button_exit[2.5,3.5;1.5,1;quit_search;Close]" ..
 		"image[3,1;1,1;" .. cc_guide.icons[recipes[index].type] .. "]"
-
-	cc_guide.contexts[name]["inv"]:set_list("output", {[1] = "", [9] = ""})
-	for i, stack in pairs(recipes[index].items) do
-		local newind = i + (math.floor((i-1)/width) * (3 - width))
-		if stack:split(":")[1] ~= "group" then
-			cc_guide.contexts[name]["inv"]:set_stack("output", newind, ItemStack(stack))
-		else
-			cc_guide.contexts[name]["inv"]:set_stack("output", newind, ItemStack(cc_guide.groups[stack:split(":")[2]]))
+	for row = 1, 3 do
+		for column = 1, 3 do
+			if column <= width then
+				local desc = ""
+				local stack = ""
+				local ind = column + ((row - 1) * width)
+				if cc_guide.contexts[name]["data"][index].items[ind] then
+					local s = cc_guide.contexts[name]["data"][index].items[ind]
+					if s:split(":")[1] ~= "group" then
+						stack = s
+					else
+						stack = cc_guide.groups[s:split(":")[2]]
+						desc = "G."
+					end
+				end
+				answer = answer .. string.format("item_image_button[%d,%d;1,1;%s;cc_g_%d_%d_%s;%s]", column - 1, row - 1, stack, row, column, stack, desc)
+			end
 		end
 	end
 
@@ -85,19 +93,7 @@ minetest.register_chatcommand("craft_help", {
 			["data"] = recipes,
 			["recp"] = 1,
 			["oldformspec"] = minetest.get_player_by_name(name):get_inventory_formspec(),
-			["inv"] = minetest.create_detached_inventory("cc_output_" .. name, {
-				allow_move = function()
-					return 0
-				end,
-				allow_take = function()
-					return 0
-				end,
-				allow_put = function()
-					return 0
-				end,
-			}),
 		}
-		cc_guide.contexts[name]["inv"]:set_size("output", 3*3)
 
 		cc_guide.do_work(name)
 		minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.contexts[name]["formspec"])
