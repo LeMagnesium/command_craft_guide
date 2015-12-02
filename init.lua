@@ -163,7 +163,7 @@ end)
 minetest.after(0, function() -- Retrieve all groups
 	for item, def in pairs(minetest.registered_items) do
 		for group in pairs(def.groups) do
-			if not cc_guide.groups[group] then
+			if not cc_guide.groups[group] and def.description and def.description ~= "" then
 				cc_guide.groups[group] = item
 			end
 		end
