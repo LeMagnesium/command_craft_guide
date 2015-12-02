@@ -14,7 +14,56 @@ cc_guide.icons = {
 	["cooking"] = "default_furnace_front.png",
 	["fuel"] = "default_furnace_front.png",
 }
-cc_guide.groups = {}
+
+function cc_guide.investigate_groups(tab)
+	if table.getn(tab) == 0 then
+		return {}
+	end
+	local tmp = {}
+	for _, group in pairs(tab) do
+		tmp[group] = {}
+	end
+
+	for item, def in pairs(minetest.registered_items) do
+		if def.description and def.description ~= "" then
+			for group, tab in pairs(tmp) do
+				if def.groups[group] then
+					table.insert(tab, item)
+				end
+			end
+		end
+	end
+
+	local tab_min = nil
+	for group, tab in pairs(tmp) do
+		if (not tab_min) or (table.getn(tab) < table.getn(tab_min)) then
+			tab_min = tab
+		end
+	end
+
+	local returned_results = {}
+	for _, item in pairs(tab_min) do
+		local found = true
+		for group, tab in pairs(tmp) do
+			local inside = false
+			for _, entry in pairs(tab) do
+				if entry == item then
+					inside = true
+					break
+				end
+			end
+			if not inside then
+				found = false
+				break
+			end
+		end
+		if found then
+			table.insert(returned_results, item)
+		end
+	end
+
+	return returned_results
+end
 
 function cc_guide.do_work(name)
 	local recipes = cc_guide.contexts[name]["data"]
@@ -41,7 +90,11 @@ function cc_guide.do_work(name)
 					if s:split(":")[1] ~= "group" then
 						stack = s
 					else
-						stack = cc_guide.groups[s:split(":")[2]]
+						local seekedgroups = {}
+						for _, group in pairs(s:split(":")[2]:split(",")) do
+							table.insert(seekedgroups, group)
+						end
+						stack = cc_guide.investigate_groups(seekedgroups)[1]
 						desc = "G."
 					end
 				end
@@ -160,12 +213,3 @@ minetest.register_on_leaveplayer(function(player)
 	end
 end)
 
-minetest.after(0, function() -- Retrieve all groups
-	for item, def in pairs(minetest.registered_items) do
-		for group in pairs(def.groups) do
-			if not cc_guide.groups[group] and def.description and def.description ~= "" then
-				cc_guide.groups[group] = item
-			end
-		end
-	end
-end)
