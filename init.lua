@@ -13,6 +13,7 @@ cc_guide.icons = {
 	["shapeless"] = "command_craft_guide_normal.png",
 	["cooking"] = "default_furnace_front.png",
 	["fuel"] = "default_furnace_front.png",
+	["nil"] = "command_craft_guide_nil.png",
 }
 
 function cc_guide.investigate_groups(tab)
@@ -65,58 +66,153 @@ function cc_guide.investigate_groups(tab)
 	return returned_results
 end
 
-function cc_guide.do_work(name)
-	local recipes = cc_guide.contexts[name]["data"]
-	local index = cc_guide.contexts[name]["recp"]
-	local width = recipes[index].width
-	if width == 0 then
-		width = 3
-		recipes[index].type = "shapeless"
+function cc_guide.get_context(name)
+	if not cc_guide.contexts[name] then
+		return nil
+	end
+	return cc_guide.contexts[name][cc_guide.contexts[name]["data"]["depth"]]
+end
+
+function cc_guide.clean_context(name)
+	if not cc_guide.contexts[name] then
+		return nil
+	end
+	minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.contexts[name]["data"]["primaryformspec"])
+	cc_guide.contexts[name] = nil
+	minetest.log("action", "[CC_Guide] Player " .. name .. " closed their windows")
+end
+
+function cc_guide.create_context(name, mode)
+	if cc_guide.contexts[name] then
+		cc_guide.clean_context(name)
 	end
 
-	minetest.log("action", "[CC_Guide] Form update for player " .. name .. " at index " .. index)
+	cc_guide.contexts[name] = {
+		["data"] = {
+			["primaryformspec"] = minetest.get_player_by_name(name):get_inventory_formspec(),
+			["depth"] = 1,
+		},
+		[1] = {
+			["mode"] = mode,
+		},
+	}
+	return cc_guide.contexts[name][1]
+end
 
-	local answer = "size[4,4]" ..
-		"button_exit[2.5,3.5;1.5,1;quit_search;Close]" ..
-		"image[3,1;1,1;" .. cc_guide.icons[recipes[index].type] .. "]"
-	for row = 1, 3 do
-		for column = 1, 3 do
-			if column <= width then
-				local desc = ""
-				local stack = ""
-				local ind = column + ((row - 1) * width)
-				if cc_guide.contexts[name]["data"][index].items[ind] then
-					local s = cc_guide.contexts[name]["data"][index].items[ind]
-					if s:split(":")[1] ~= "group" then
-						stack = s
-					else
-						local seekedgroups = {}
-						for _, group in pairs(s:split(":")[2]:split(",")) do
-							table.insert(seekedgroups, group)
+function cc_guide.get_data(name)
+	if not cc_guide.contexts[name] then
+		return nil
+	else
+		return cc_guide.contexts[name]["data"]
+	end
+end
+
+function cc_guide.go_deeper(name, mode)
+	if not cc_guide.contexts[name] then
+		return nil
+	end
+	cc_guide.contexts[name]["data"]["depth"] = cc_guide.contexts[name]["data"]["depth"] + 1
+	cc_guide.contexts[name][cc_guide.contexts[name]["data"]["depth"]] = {
+		["mode"] = mode,
+	}
+	return cc_guide.contexts[name][cc_guide.contexts[name]["data"]["depth"]]
+end
+
+function cc_guide.go_upper(name)
+	if not cc_guide.contexts[name] then
+		return nil
+	end
+	cc_guide.contexts[name][cc_guide.contexts[name]["data"]["depth"]] = nil
+	cc_guide.contexts[name]["data"]["depth"] = cc_guide.contexts[name]["data"]["depth"] - 1
+	minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.contexts[name][cc_guide.contexts[name]["data"]["depth"]]["formspec"])
+	return cc_guide.get_context()
+end
+
+
+-- Will change the formspec depending on what event/mode are in the context
+function cc_guide.do_work(name)
+	local context = cc_guide.get_context(name)
+	local data = cc_guide.get_data(name)
+	if not context or not data then return end
+
+	-- The "show" mode shows the craft recipes available for an item
+	if context["mode"] == "show" then
+		local answer = "size[4,4.5]" ..
+			"button_exit[2.5,3.75;1.5,1;quit_search;Close]"
+		if data["depth"] > 1 then
+			answer = answer .. "button[2.5,3;1.5,1;go_back;Back]"
+		end
+
+		local recipes = minetest.get_all_craft_recipes(context["itemstring"])
+		if recipes then
+			local index = context["recp"]
+			local width = recipes[index].width
+			if width == 0 then
+				width = 3
+				recipes[index].type = "shapeless"
+			end
+
+			answer = answer .. "image[3,1;1,1;" .. cc_guide.icons[recipes[index].type] .. "]"
+			for row = 1, 3 do
+				for column = 1, 3 do
+					if column <= width then
+						local desc = ""
+						local stack = ""
+						local ind = column + ((row - 1) * width)
+						if recipes[index].items[ind] then
+							local s = recipes[index].items[ind]
+							if s:split(":")[1] ~= "group" then
+								stack = s
+							else
+								stack = cc_guide.investigate_groups(s:split(":")[2]:split(","))[1]
+								desc = "G."
+							end
 						end
-						stack = cc_guide.investigate_groups(seekedgroups)[1]
-						desc = "G."
+						answer = answer .. string.format("item_image_button[%d,%d;1,1;%s;cc_g_%d_%d_%s;%s]", column - 1, row - 1, stack, row, column, stack, desc)
 					end
 				end
-				answer = answer .. string.format("item_image_button[%d,%d;1,1;%s;cc_g_%d_%d_%s;%s]", column - 1, row - 1, stack, row, column, stack, desc)
 			end
-		end
-	end
 
-	if table.getn(recipes) > 1 then
-		if index < table.getn(recipes) then
-			answer = answer .. "button[3,2;1,1;cc_next;>>]"
+			if table.getn(recipes) > 1 then
+				if index < table.getn(recipes) then
+					answer = answer .. "button[3,2;1,1;cc_next;>>]"
+				end
+				if index > 1 then
+					answer = answer .. "button[3,0;1,1;cc_prev;<<]"
+				end
+				answer = answer .. "label[0,3.5;Recipe " .. index .. "/" .. table.getn(recipes) .. "]"
+			end
+		else
+			answer = answer .. "image[3,1;1,1;" .. cc_guide.icons["nil"] .. "]"
 		end
-		if index > 1 then
-			answer = answer .. "button[3,0;1,1;cc_prev;<<]"
-		end
-		answer = answer .. "label[0,3.6;Recipe " .. index .. "/" .. table.getn(recipes) .. "]"
-	end
+		context["formspec"] = answer
+		minetest.log("action", "[CC_Guide] Form 'show' updated for player " .. name .. " at depth " .. data["depth"])
 
-	cc_guide.contexts[name]["formspec"] = answer
+	-- The "list" mode is a list of results from an item querry
+	elseif context["mode"] == "list" then
+		local list = context["list"]
+		local answer = "size[10,10]" ..
+			"label[0,0;The following itemstring(s) matched :]" ..
+			"textlist[0,0.5;9.7,8.7;search_results;"
+
+		for i, item in pairs(list) do
+			if i > 1 then
+				answer = answer .. ","
+			end
+			answer = answer .. item
+		end
+
+		answer = answer .. ";" .. context["selected_item"] .. ";]" ..
+			"button_exit[8.5,9.5;1.5,1;quit_search;Close]"
+		context["formspec"] = answer
+	else
+		error("No cc_guide mode " .. dump(context["mode"]))
+	end
+	minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.get_context(name)["formspec"])
 end
-	
 
+
+-- Chatcommands to trigger the modes
 minetest.register_chatcommand("craft_help", {
 	privs = {interact = true, shout = true},
 	params = "<itemstring>",
@@ -137,19 +233,11 @@ minetest.register_chatcommand("craft_help", {
 			return false, "No recipe for item " .. param
 		end
 
-		if cc_guide.contexts[name] then
-			minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.contexts[name]["oldformspec"])
-		end
-
-		cc_guide.contexts[name] = {
-			["itemstring"] = param,
-			["data"] = recipes,
-			["recp"] = 1,
-			["oldformspec"] = minetest.get_player_by_name(name):get_inventory_formspec(),
-		}
+		local context = cc_guide.create_context(name, "show")
+		context["itemstring"] = param
+		context["recp"] = 1
 
 		cc_guide.do_work(name)
-		minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.contexts[name]["formspec"])
 
 		return true, table.getn(recipes) .. " recipes found for item " .. param ..
 			"\nOpen your inventory to see the results"
@@ -164,52 +252,84 @@ minetest.register_chatcommand("craft_search", {
 			minetest.chat_send_player("Warning: searching without any parameter will return every registered item on the server")
 		end
 
-		local answer = "size[10,10]" ..
-			"label[0,0;The following itemstring matched :]" ..
-			"table[0,0.5;9.7,8.7;search_results;"
+		if cc_guide.contexts[name] then
+			minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.contexts[name]["primaryformspec"])
+		end
 
+		local context = cc_guide.create_context(name, "list")
 		local found = 0
+		local items = {}
 		for itemstring, def in pairs(minetest.registered_items) do
 			if def.description and def.description ~= "" and (def.description:lower():find(param:lower()) or
 				itemstring:find(param:lower())) then
-				answer = answer .. itemstring .. " (" ..def.description .. "),"
+				table.insert(items, string.format("%s (%s)", itemstring, def.description))
 				found = found + 1
 			end
 		end
+		context["query"] = param
+		context["size"] = found
+		context["list"] = items
+		context["selected_item"] = 1
+		cc_guide.do_work(name)
 
-		answer = answer .. "\b;]" ..
-			"button_exit[8.5,9.5;1.5,1;quit_search;Close]"
-
-		minetest.show_formspec(name, "cc_g:search_results", answer)
 		return true, found .. " recipes found for item " .. param
+			.. "\nOpen your inventory to see the results"
 	end
 })
 
+
+-- Event handling using on_player_receive_fields
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	local name = player:get_player_name()
 	if formname ~= "" or not cc_guide.contexts[name] then
 		return
 	end
 
+	local context = cc_guide.get_context(name)
+	local data = cc_guide.get_data(name)
+
 	if fields.quit then
-		player:set_inventory_formspec(cc_guide.contexts[name]["oldformspec"])
-		cc_guide.contexts[name] = nil
-		minetest.log("action", "[CC_Guide] Player " .. name .. " closed their help window")
+		cc_guide.clean_context(name)
 		return
+
+	elseif fields.go_back then
+		local context = cc_guide.go_upper(name)
+		if cc_guide.get_data(name)["depth"] <= 0 then
+			cc_guide.clean_context(name)
+		end
+
 	elseif fields.cc_next then
-		cc_guide.contexts[name]["recp"] = cc_guide.contexts[name]["recp"] + 1
+		context["recp"] = context["recp"] + 1
 	elseif fields.cc_prev then
-		cc_guide.contexts[name]["recp"] = cc_guide.contexts[name]["recp"] - 1
+		context["recp"] = context["recp"] - 1
 	end
+
+	if context["mode"] == "show" then
+		for key, val in pairs(fields) do
+			if key:split("_")[5] and minetest.registered_items[key:split("_")[5]] then
+				local context = cc_guide.go_deeper(name, "show")
+				context["itemstring"] = key:split("_")[5]
+				context["recp"] = 1
+				break
+			end
+		end
+	elseif context["mode"] == "list" then
+		local event = minetest.explode_textlist_event(fields.search_results)
+		if event.type == "DCL" then
+			local elem = context["list"][event.index]:split(" ")[1]
+			context["selected_item"] = event.index
+
+			local context = cc_guide.go_deeper(name, "show")
+			context["itemstring"] = elem
+			context["recp"] = 1
+		end
+	end
+
 	cc_guide.do_work(name)
-	player:set_inventory_formspec(cc_guide.contexts[name]["formspec"])
 end)
 
+-- Clean when leaving
 minetest.register_on_leaveplayer(function(player)
-	local player_name = player:get_player_name()
-	if cc_guide.contexts[player_name] then
-		player:set_inventory_formspec(cc_guide.contexts[player_name]["oldformspec"])
-		cc_guide.contexts[player_name] = nil
-	end
+	cc_guide.clean_context(player:get_player_name())
 end)
 
