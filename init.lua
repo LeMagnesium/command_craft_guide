@@ -16,6 +16,19 @@ cc_guide.icons = {
 	["nil"] = "command_craft_guide_nil.png",
 }
 
+function cc_guide.fetch_items(group)
+	if not group then return end
+	local res = {}
+	for item, def in pairs(minetest.registered_items) do
+		if def.description and def.description ~= "" then
+			if def.groups[group] then
+				table.insert(res, item)
+			end
+		end
+	end
+	return res
+end
+
 function cc_guide.investigate_groups(tab)
 	if table.getn(tab) == 0 then
 		return {}
@@ -158,6 +171,7 @@ function cc_guide.do_work(name)
 					if column <= width then
 						local desc = ""
 						local stack = ""
+						local id = ""
 						local ind = column + ((row - 1) * width)
 						if recipes[index].items[ind] then
 							local s = recipes[index].items[ind]
@@ -167,8 +181,9 @@ function cc_guide.do_work(name)
 								stack = cc_guide.investigate_groups(s:split(":")[2]:split(","))[1]
 								desc = "G."
 							end
+							id = s
 						end
-						answer = answer .. string.format("item_image_button[%d,%d;1,1;%s;cc_g_%d_%d_%s;%s]", column - 1, row - 1, stack, row, column, stack, desc)
+						answer = answer .. string.format("item_image_button[%d,%d;1,1;%s;cc_g_%d_%d.%s;%s]", column - 1, row - 1, stack, row, column, id, desc)
 					end
 				end
 			end
@@ -193,7 +208,12 @@ function cc_guide.do_work(name)
 		local list = context["list"]
 		local answer = "size[10,10]" ..
 			"label[0,0;The following itemstring(s) matched :]" ..
-			"textlist[0,0.5;9.7,8.7;search_results;"
+			"button_exit[8.5,9.5;1.5,1;quit_search;Close]"
+		if data["depth"] > 1 then
+			answer = answer .. "button[6.5,9.5;1.5,1;go_back;Back]"
+		end
+		answer = answer .. "textlist[0,0.5;9.7,8.7;search_results;"
+
 
 		for i, item in pairs(list) do
 			if i > 1 then
@@ -202,8 +222,7 @@ function cc_guide.do_work(name)
 			answer = answer .. item
 		end
 
-		answer = answer .. ";" .. context["selected_item"] .. ";]" ..
-			"button_exit[8.5,9.5;1.5,1;quit_search;Close]"
+		answer = answer .. ";" .. context["selected_item"] .. ";]"
 		context["formspec"] = answer
 	else
 		error("No cc_guide mode " .. dump(context["mode"]))
@@ -252,10 +271,6 @@ minetest.register_chatcommand("craft_search", {
 			minetest.chat_send_player("Warning: searching without any parameter will return every registered item on the server")
 		end
 
-		if cc_guide.contexts[name] then
-			minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.contexts[name]["primaryformspec"])
-		end
-
 		local context = cc_guide.create_context(name, "list")
 		local found = 0
 		local items = {}
@@ -281,7 +296,8 @@ minetest.register_chatcommand("craft_search", {
 -- Event handling using on_player_receive_fields
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	local name = player:get_player_name()
-	if formname ~= "" or not cc_guide.contexts[name] then
+
+	if formname ~= "" or not cc_guide.get_context(name) then
 		return
 	end
 
@@ -306,13 +322,24 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 
 	if context["mode"] == "show" then
 		for key, val in pairs(fields) do
-			if key:split("_")[5] and minetest.registered_items[key:split("_")[5]] then
-				local context = cc_guide.go_deeper(name, "show")
-				context["itemstring"] = key:split("_")[5]
-				context["recp"] = 1
-				break
+			if key:split(".")[2] then
+				if minetest.registered_items[key:split(".")[2]] then
+					local context = cc_guide.go_deeper(name, "show")
+					context["itemstring"] = key:split(".")[2]
+					context["recp"] = 1
+					break
+				else
+					local items = cc_guide.fetch_items(key:split(".")[2]:split(":")[2])
+					if table.getn(items) > 0 then
+						local context = cc_guide.go_deeper(name, "list")
+						context["list"] = items
+						context["selected_item"] = 1
+						cc_guide.do_work(name)
+					end
+				end
 			end
 		end
+
 	elseif context["mode"] == "list" then
 		local event = minetest.explode_textlist_event(fields.search_results)
 		if event.type == "DCL" then
