@@ -79,6 +79,17 @@ function cc_guide.investigate_groups(tab)
 	return returned_results
 end
 
+function cc_guide.search_in_items(str)
+	local items = {}
+	for itemstring, def in pairs(minetest.registered_items) do
+		if def.description and def.description ~= "" and (def.description:lower():find(str:lower()) or
+			itemstring:find(str:lower())) then
+			table.insert(items, itemstring)
+		end
+	end
+	return items
+end
+
 function cc_guide.get_context(name)
 	if not cc_guide.contexts[name] then
 		return nil
@@ -207,7 +218,7 @@ function cc_guide.do_work(name)
 	elseif context["mode"] == "list" then
 		local list = context["list"]
 		local answer = "size[10,10]" ..
-			"label[0,0;The following itemstring(s) matched :]" ..
+			"label[0,0;The following itemstring(s) matched \"" .. context["query"] .. "\":]" ..
 			"button_exit[8.5,9.5;1.5,1;quit_search;Close]"
 		if data["depth"] > 1 then
 			answer = answer .. "button[6.5,9.5;1.5,1;go_back;Back]"
@@ -230,68 +241,53 @@ function cc_guide.do_work(name)
 	minetest.get_player_by_name(name):set_inventory_formspec(cc_guide.get_context(name)["formspec"])
 end
 
-
--- Chatcommands to trigger the modes
-minetest.register_chatcommand("craft_help", {
-	privs = {interact = true, shout = true},
-	params = "<itemstring>",
+-- More 'user-friendly' command, /craft
+minetest.register_chatcommand("craft", {
+	params = "<itemstring or search string>",
+	privs = {},
+	description = "Search or show crafts for an item",
 	func = function(name, param)
 		if not minetest.get_player_by_name(name) then
-			return false, "You need to be online to be shown formspecs"
-		end
-		if param == "" then
-			return false, "Give an itemstring to look for (use /craft_search <name> to search the itemstring of an item)"
-		end
-
-		if not minetest.registered_items[param] then
-			return false, "Unknown item : " .. param
+			return false, "You need to be in the game to use that command"
+		elseif param == "" then
+			return false, "Please give a parameter to the command to search/query"
 		end
 
-		local recipes = minetest.get_all_craft_recipes(param)
-		if not recipes then
-			return false, "No recipe for item " .. param
-		end
+		-- Case 1 : ItemString
+		if minetest.registered_items[param] and minetest.get_all_craft_recipes(minetest.registered_items[param].name) then
+			local recipes = minetest.get_all_craft_recipes(minetest.registered_items[param].name) -- Just in case we receive an alias
 
-		local context = cc_guide.create_context(name, "show")
-		context["itemstring"] = param
-		context["recp"] = 1
+			local context = cc_guide.create_context(name, "show")
+			context["itemstring"] = minetest.registered_items[param].name
+			context["recp"] = 1
+			cc_guide.do_work(name)
 
-		cc_guide.do_work(name)
-
-		return true, table.getn(recipes) .. " recipes found for item " .. param ..
-			"\nOpen your inventory to see the results"
-	end,
-})
-
-minetest.register_chatcommand("craft_search", {
-	privs = {shout = true},
-	params = "<description>",
-	func = function(name, param)
-		if param == "" then
-			minetest.chat_send_player("Warning: searching without any parameter will return every registered item on the server")
-		end
-
-		local context = cc_guide.create_context(name, "list")
-		local found = 0
-		local items = {}
-		for itemstring, def in pairs(minetest.registered_items) do
-			if def.description and def.description ~= "" and (def.description:lower():find(param:lower()) or
-				itemstring:find(param:lower())) then
-				table.insert(items, string.format("%s (%s)", itemstring, def.description))
-				found = found + 1
+			return true, table.getn(recipes) .. " recipes found for item " .. param ..
+				"\nOpen your inventory to see the results"
+		else
+			local items = cc_guide.search_in_items(param)
+			-- Case 2 : It's a query string
+			if table.getn(items) == 0 then
+				return false, "No item matched the string " .. param
 			end
-		end
-		context["query"] = param
-		context["size"] = found
-		context["list"] = items
-		context["selected_item"] = 1
-		cc_guide.do_work(name)
 
-		return true, found .. " recipes found for item " .. param
-			.. "\nOpen your inventory to see the results"
+			for key, item in pairs(items) do
+				items[key] = string.format("%s (%s)", item, minetest.registered_items[item].description)
+			end
+
+			local context = cc_guide.create_context(name, "list")
+			context["query"] = param
+			context["size"] = table.getn(items)
+			context["list"] = items
+			context["selected_item"] = 1
+
+			cc_guide.do_work(name)
+
+			return true, context["size"] .. " items matching string " .. param
+				.. "\nOpen your inventory to see the results"
+		end
 	end
 })
-
 
 -- Event handling using on_player_receive_fields
 minetest.register_on_player_receive_fields(function(player, formname, fields)
@@ -332,6 +328,9 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 					local items = cc_guide.fetch_items(key:split(".")[2]:split(":")[2])
 					if table.getn(items) > 0 then
 						local context = cc_guide.go_deeper(name, "list")
+						for key, item in pairs(items) do
+							items[key] = string.format("%s (%s)", item, minetest.registered_items[item].description)
+						end
 						context["list"] = items
 						context["selected_item"] = 1
 						cc_guide.do_work(name)
